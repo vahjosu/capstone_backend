@@ -26,7 +26,7 @@ connection.connect(error => {
         return;
     }
     console.log('Connected to the database.');
-});
+}); 
 
 // Home route
 app.get('/', (req, res) => {
@@ -75,7 +75,7 @@ app.post('/api/register', (req, res) => {
     });
 });
 
-app.post('/api/log', (req, res) => {
+app.post('/api/timein', (req, res) => {
     const { name } = req.body;
 
     if (!name) {
@@ -97,7 +97,7 @@ app.post('/api/log', (req, res) => {
         }
 
         const schoolData = fetchResults[0];
-        console.log('School Data:', schoolData);
+        console.log('School Data:', schoolData); 
 
         // Determine the Position value
         const position = schoolData.Position ? schoolData.Position : 'Student';
@@ -125,9 +125,128 @@ app.post('/api/log', (req, res) => {
             }
 
             // Successfully logged the visitor data
-            res.json({ success: true, message: 'Visitor data successfully logged.' });
+            res.json({ success: true, message: 'The data successfully logged in.' });
         });
     });
+});
+
+app.post('/api/timeout', (req, res) => {
+    const { name } = req.body;
+
+    if (!name) {
+        return res.status(400).json({ success: false, error: 'Name is required.' });
+    }
+
+    // Fetch visitor data based on the provided name
+    const fetchSql = 'SELECT UID, Name, Position, ID, Program, College, Year_Level, Address, Purpose FROM ustpcdodata WHERE Name = ?';
+    connection.query(fetchSql, [name], (fetchErr, fetchResults) => {
+        if (fetchErr) {
+            console.error('Fetch error: ', fetchErr);
+            return res.status(500).json({ success: false, error: 'Fetch error', details: fetchErr.message });
+        }
+        
+            console.log('Fetched results:', fetchResults);
+
+        if (fetchResults.length === 0) {
+            return res.status(404).json({ success: false, error: 'Visitor not found.' });
+        }
+
+        const schoolData = fetchResults[0];
+        console.log('School Data:', schoolData); 
+
+        // Determine the Position value
+        const position = schoolData.Position ? schoolData.Position : 'Student';
+
+        // Prepare to log data
+        const logSql = 'INSERT INTO logs (UID, Name, Position, ID, Program, College, Year_Level, Address, Purpose, LogTime, LogType) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)';
+        const logValues = [
+            schoolData.UID,
+            schoolData.Name,
+            position, // Use the determined position
+            schoolData.ID, // ID from ustpcdodata
+            schoolData.Program,
+            schoolData.College,
+            schoolData.Year_Level,
+            schoolData.Address,
+            schoolData.Purpose,
+            'Time Out' // or 'Time In' as needed
+        ];
+
+        // Insert the log data
+        connection.query(logSql, logValues, (logErr) => {
+            if (logErr) {
+                console.error('Log error: ', logErr);
+                return res.status(500).json({ success: false, error: 'Log error', details: logErr.message });
+            }
+
+            // Successfully logged the visitor data
+            res.json({ success: true, message: 'Data successfully logged out.' });
+        });
+    });
+});
+
+app.get('/api/logs/count', (req, res) => {
+    console.log('Received request for /api/logs/count'); // Log when the request is received
+
+    const timeInQuery = 'SELECT COUNT(*) AS timeInCount FROM logs WHERE LogType = "Time In"';
+    const timeOutQuery = 'SELECT COUNT(*) AS timeOutCount FROM logs WHERE LogType = "Time Out"';
+
+    connection.query(timeInQuery, (timeInErr, timeInResults) => {
+        if (timeInErr) {
+            console.error('Time In query error:', timeInErr);
+            return res.status(500).json({ success: false, error: 'Error fetching Time In count' });
+        }
+
+        connection.query(timeOutQuery, (timeOutErr, timeOutResults) => {
+            if (timeOutErr) {
+                console.error('Time Out query error:', timeOutErr);
+                return res.status(500).json({ success: false, error: 'Error fetching Time Out count' });
+            }
+
+            const totalRemaining = timeInResults[0].timeInCount - timeOutResults[0].timeOutCount;
+            console.log('Total Remaining:', totalRemaining); // Log the total remaining
+            res.json({ totalRemaining });
+        });
+    });
+});
+
+const logsData = [
+    { college: 'CITC', logType: 'Time In' },
+    { college: 'CITC', logType: 'Time Out' },
+    { college: 'COT', logType: 'Time In' },
+    { college: 'CSTE', logType: 'Time Out' },
+    { college: 'COM', logType: 'Time In' },
+    { college: 'CSM', logType: 'Time In' },
+    { college: 'CEA', logType: 'Time Out' },
+    { college: 'SHS', logType: 'Time In' },
+    { college: 'CITC', logType: 'Time In' }, // Example entries
+    { college: 'COT', logType: 'Time Out' },
+    // Add more log entries as needed
+];
+
+// Function to count logs for a specific college
+const countLogsForCollege = (college) => {
+    return (req, res) => {
+        // Filter logs for the specified college
+        const collegeLogs = logsData.filter(log => log.college === college);
+        const totalCount = collegeLogs.length; // Count the logs for that college
+        res.json({ totalRemaining: totalCount });
+    };
+};
+
+// Define your routes here for each college
+app.get('/api/logs/count/CITC', countLogsForCollege('CITC'));
+app.get('/api/logs/count/COT', countLogsForCollege('COT'));
+app.get('/api/logs/count/CSTE', countLogsForCollege('CSTE'));
+app.get('/api/logs/count/COM', countLogsForCollege('COM'));
+app.get('/api/logs/count/CSM', countLogsForCollege('CSM'));
+app.get('/api/logs/count/CEA', countLogsForCollege('CEA'));
+app.get('/api/logs/count/SHS', countLogsForCollege('SHS'));
+
+// Endpoint to get the total visitors (dummy implementation)
+app.get('/api/logs/count', (req, res) => {
+    const totalLogs = logsData.length; // Total logs
+    res.json({ totalRemaining: totalLogs });
 });
 
 // Start the server
